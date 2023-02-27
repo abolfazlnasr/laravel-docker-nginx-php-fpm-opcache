@@ -1,0 +1,89 @@
+version: "3.8"
+
+services:
+    app:
+        build:
+            context: .
+            target: php
+            args:
+                - APP_ENV = ${APP_ENV}
+                - user = sangar
+                - uid = 1000
+        container_name: ${APP_NAME}-app
+        restart: unless-stopped
+        environment:
+            - APP_ENV = ${APP_ENV}
+            - APP_PORT = ${APP_PORT}
+            - CONTAINER_ROLE = app
+        working_dir: /var/www
+        ports:
+            - "8000:8000"
+        volumes:
+            - './:/var/www'
+        networks:
+            - default
+        depends_on:
+            - postgres
+            - redis
+
+    worker:
+        build:
+            context: .
+            target: php
+            args:
+                - APP_ENV = ${APP_ENV}
+        container_name: ${APP_NAME}-worker
+        environment:
+            - APP_ENV = ${APP_ENV}
+            - CONTAINER_ROLE = worker
+        working_dir: /var/www
+        volumes:
+            - './:/var/www'
+        networks:
+            - default
+        depends_on:
+            - postgres
+            - redis
+            - app
+
+    postgres:
+        image: postgres:15-alpine
+        container_name: ${APP_NAME}-postgres
+        restart: unless-stopped
+        environment:
+            PGPASSWORD: '${DB_PASSWORD:-secret}'
+            POSTGRES_DB: '${DB_DATABASE}'
+            POSTGRES_USER: '${DB_USERNAME}'
+            POSTGRES_PASSWORD: '${DB_PASSWORD}'
+            SERVICE_TAGS: 'dev'
+        ports:
+            - "5432:5432"
+        healthcheck:
+            test: [ "CMD", "pg_isready", "-q", "-d", "${DB_DATABASE}", "-U", "${DB_USERNAME}" ]
+            retries: 3
+            timeout: 5s
+        volumes:
+            - './docker/postgresql/data:/var/lib/postgresql/data'
+        networks:
+            - default
+
+    redis:
+        image: redis:alpine
+        container_name: ${APP_NAME}-redis
+        restart: unless-stopped
+        command: redis-server --appendonly yes --requirepass  "${REDIS_PASSWORD}"
+        ports:
+            - "6379:6379"
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            retries: 3
+            timeout: 5s
+        volumes:
+            - './docker/redis/data:/data'
+        networks:
+            - default
+
+networks:
+    default:
+        name: '${APP_NAME}'
+        driver: bridge
